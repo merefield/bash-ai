@@ -388,8 +388,30 @@ print() {
 }
 
 json_safe() {
-	# FIX this is a bad way of doing this, and it misses many unsafe characters
-	echo "$1" | perl -pe 's/\\/\\\\/g; s/"/\\"/g; s/\033/\\\\033/g; s/\n/ /g; s/\r/\\r/g; s/\t/\\t/g'
+        # FIX this is a bad way of doing this, and it misses many unsafe characters
+        echo "$1" | perl -pe 's/\\/\\\\/g; s/"/\\"/g; s/\033/\\\\033/g; s/\n/ /g; s/\r/\\r/g; s/\t/\\t/g'
+}
+
+repair_truncated_json() {
+        local reply="$1"
+        local repaired="$reply"
+
+        # Ensure we have an even number of double quotes by appending a closing quote
+        if (( $(tr -cd '"' <<< "$repaired" | wc -c) % 2 != 0 )); then
+                repaired+="\""
+        fi
+
+        # Ensure that opening braces have matching closing braces
+        while [[ $(tr -cd '{' <<< "$repaired" | wc -c) -gt $(tr -cd '}' <<< "$repaired" | wc -c) ]]; do
+                repaired+="}"
+        done
+
+        # Only use the repaired string if it parses as valid JSON
+        if echo "$repaired" | jq -e . >/dev/null 2>&1; then
+                echo "$repaired"
+        else
+                echo "$reply"
+        fi
 }
 
 run_cmd() {
@@ -812,23 +834,10 @@ while [ "$INTERACTIVE_MODE" = true ] || [ "$NEEDS_TO_RUN" = true ] || [ "$AWAIT_
 	if [ "$FINISH_REASON" != "stop" ]; then
 		if [ "$FINISH_REASON" == "length" ]; then
 			
-			# Check if the last character is a closing brace
-			if [[ "${REPLY: -1}" != "}" ]]; then
-				REPLY+="\"}"
-			fi
-			
-			# Check if the number of opening and closing braces match
-			while [[ $(tr -cd '{' <<< "$REPLY" | wc -c) -gt $(tr -cd '}' <<< "$REPLY" | wc -c) ]]; do
-				REPLY+="}"
-			done
-			
-			# Check if the number of double quotes is even
-			if (( $(tr -cd '"' <<< "$REPLY" | wc -c) % 2 != 0 )); then
-				REPLY+="\\\""
-			fi
-			
-			# Replace any unescaped single backslashes with double backslashes
-			REPLY="${REPLY//\\\\/\\\\\\\\}"
+                        REPLY=$(repair_truncated_json "$REPLY")
+
+                        # Replace any unescaped single backslashes with double backslashes
+                        REPLY="${REPLY//\\\\/\\\\\\\\}"
 		elif [ "$FINISH_REASON" == "content_filter" ]; then
 			REPLY="Your query was rejected."
 		elif [ "$FINISH_REASON" == "tool_calls" ]; then
