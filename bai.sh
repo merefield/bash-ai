@@ -384,7 +384,7 @@ print_cmd() {
 }
 
 print() {
-	printf "%s%b\n" "${PRE_TEXT}$1" "${RESET_COLOR}"
+	printf "%b%b%b\n" "${PRE_TEXT}" "$1" "${RESET_COLOR}"
 }
 
 json_safe() {
